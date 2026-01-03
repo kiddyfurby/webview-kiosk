@@ -13,7 +13,9 @@ import android.webkit.HttpAuthHandler
 import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
+import android.webkit.MimeTypeMap
 import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -21,6 +23,10 @@ import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.core.net.toUri
+import androidx.webkit.WebViewAssetLoader
+import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
 import uk.nktnet.webviewkiosk.R
 import uk.nktnet.webviewkiosk.config.Constants
 import uk.nktnet.webviewkiosk.config.SystemSettings
@@ -64,6 +70,17 @@ fun createCustomWebview(
 ): WebViewCreation {
     val systemSettings = config.systemSettings
     val userSettings = config.userSettings
+
+    val assetLoader = remember {
+        WebViewAssetLoader.Builder()
+            .addPathHandler(
+                "/local-files/",
+                LocalFileDirectoryPathHandler(
+                    context.getExternalFilesDir(null) ?: context.filesDir
+                )
+            )
+            .build()
+    }
 
     val webView = remember {
         try {
@@ -158,6 +175,13 @@ fun createCustomWebview(
                                     systemSettings.urlBeforeNavigation = ""
                                 }
                             }
+                        }
+
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: WebResourceRequest?
+                        ): WebResourceResponse? {
+                            return assetLoader.shouldInterceptRequest(request!!.url)
                         }
 
                         override fun shouldOverrideUrlLoading(
@@ -432,4 +456,23 @@ fun createCustomWebview(
     }
 
     return webView
+}
+
+class LocalFileDirectoryPathHandler(
+    private val root: File
+) : WebViewAssetLoader.PathHandler {
+    override fun handle(path: String): WebResourceResponse? {
+        try {
+            val file = File(root, path)
+            if (file.canonicalPath.startsWith(root.canonicalPath) && file.exists() && file.isFile) {
+                val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
+                    MimeTypeMap.getFileExtensionFromUrl(path)
+                ) ?: "text/plain"
+                return WebResourceResponse(mimeType, null, FileInputStream(file))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
 }
